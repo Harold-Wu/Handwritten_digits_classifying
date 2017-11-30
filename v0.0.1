@@ -1,0 +1,68 @@
+# 1
+unzip("digits.zip")
+unzip("digits.zip", list = T)
+
+read_digits <- function(file_type = NULL) {
+    rawdata <- read.table(paste(file_type, ".txt", sep = ""))
+    rawdata[,1] <- as.integer(rawdata[,1])
+    rawdata
+}
+
+#2
+train_data <- read_digits("train")
+test_data <- read_digits("test")
+grays = rgb(red = 0:255/255, blue = 0:255/255, green = 0:255/255)
+view_digit <- function(file_type = NULL, observation_number = NULL) {
+    if (file_type == "train" & observation_number %in% c(1:7291) == F) {
+        stop("exceed the maximum observations, please input a integer between 1 to 7291")
+    } else if (file_type == "test" & observation_number %in% c(1:2007) == F) {
+        stop("exceed the maximum observations, please input a integer between 1 to 2007")
+    }
+    if (file_type == "train") {
+        rawdata <- train_data
+    } else if (file_type == "test") {
+        rawdata <- test_data
+    }
+    digit_matrix <- matrix(as.numeric(rawdata[observation_number, 2:257]), 16, 16)
+    digit_matrix <- digit_matrix[,nrow(digit_matrix):1]
+    image(digit_matrix, col = grays, axes = F)
+}
+# view_digit("train", 1123)
+
+#3
+par(mfrow = c(2,5))
+for (i in 0:9) {
+    digit_data <- train_data[which(train_data$V1 == i),]
+    digit_mean <- colMeans(digit_data[, 2:257])
+    digit_mean <- matrix(as.numeric(digit_mean), 16, 16)
+    digit_mean <- digit_mean[,nrow(digit_mean):1]
+    image(digit_mean, col = grays, axes = F)
+}
+#########3.2
+
+#4
+predict_knn <- function (test_points = NULL, train_points = NULL, Minkowski_p = 2, k = 3) {
+    train_index <- train_points[,1]
+    train_matrix <- as.matrix(train_points[,2:257])
+    real_index <- test_points[,1]
+    test_matrix <- as.matrix(test_points[,2:257])
+    train_nrow <- nrow(train_matrix)
+    test_nrow <- nrow(test_matrix)
+    predict_result <- matrix(nrow = test_nrow, ncol = k+1)
+    predict_result[,1] <- real_index
+    for (i in 1:test_nrow) {
+        test_distance <- abs((rep(1, times = train_nrow) %*% t(test_matrix[i,])) - train_matrix)
+        test_distance <- rowSums(test_distance^Minkowski_p)^(1/Minkowski_p)
+        test_distance <- cbind(train_index, test_distance)
+        predict_result[i,2:(k+1)] <- test_distance[order(test_distance[,2])[1:k],1]
+        colnames(predict_result) <- c("real digit", paste("d", 1:k, sep = ""))
+    }
+    predict_result
+}
+
+f <- predict_knn(test_data[1:5,], train_data, 2, 3)
+
+
+
+
+
