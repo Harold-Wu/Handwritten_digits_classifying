@@ -1,0 +1,183 @@
+#1
+unzip("digits.zip")
+unzip("digits.zip", list = T)
+
+read_digits <- function(file_type = NULL) {
+    if (file_type != "train" & file_type != "test") {
+        stop("no such file name, please input either train or test.")    #if input file_type is wrong, return error.
+    }
+    rawdata <- read.table(paste(file_type, ".txt", sep = ""))    #paste full file name.
+    rawdata[,1] <- as.factor(rawdata[,1])    #convert the labels into factor.
+    rawdata
+}
+
+#2
+train_data <- read_digits("train")
+test_data <- read_digits("test")
+grays = rgb(red = 0:255/255, blue = 0:255/255, green = 0:255/255)    #define the grayscale color.
+view_digit <- function(file_type = NULL, observation_number = NULL) {
+    if (file_type != "train" & file_type != "test") {
+        stop("no such file name, please input either train or test.")    #if input file_type is wrong, return error.
+    }
+    if (file_type == "train" & observation_number %in% c(1:7291) == F) {
+        stop("exceed the maximum observations, please input an integer between 1 to 7291.")    #if input obs # is wrong, return error.
+    } else if (file_type == "test" & observation_number %in% c(1:2007) == F) {
+        stop("exceed the maximum observations, please input an integer between 1 to 2007.")
+    }
+    if (file_type == "train") {
+        rawdata <- train_data
+    } else if (file_type == "test") {
+        rawdata <- test_data
+    }
+    digit_matrix <- matrix(as.numeric(rawdata[observation_number, 2:257]), 16, 16)    #convert pixel data into matrix.
+    digit_matrix <- digit_matrix[,ncol(digit_matrix):1]    #turn the matrix upside down.
+    image(digit_matrix, col = grays, axes = F, main = paste("Image of digit", rawdata[observation_number, 1], sep = " "))    #display image.
+}
+
+#3(a)
+par(mfrow = c(2,5))    #align the output images into 2 rows & 5 columns.
+for (i in 0:9) {
+    digit_data <- train_data[which(train_data$V1 == i),]    #extract data.
+    digit_mean <- colMeans(digit_data[, 2:257])    #calculate mean for each pixel points.
+    digit_mean <- matrix(as.numeric(digit_mean), 16, 16)    #convert pixel data into matrix.
+    digit_mean <- digit_mean[,ncol(digit_mean):1]    #turn the matrix upside down.
+    image(digit_mean, col = grays, axes = F, main = paste("Image of digit", i, sep = " "))    #display image.
+}
+#3(b)
+digit_mean2 <- matrix(0,10,256)    #create a matrix to store the column means of digit data 
+rownames(digit_mean2) <- c("0":"9")     #give the matrix new row names
+colnames(digit_mean2) <- paste("V", 2:257, sep = "")    #give the matrix new column names
+for (i in 0:9) {
+    digit_data <- train_data[which(train_data$V1 == i),]    #extract data.
+    digit_mean2[i+1,] <- colMeans(digit_data[, 2:257])    #calculate mean for each pixel points.
+    digit_mean2
+}
+digit_mean2 <- apply(digit_mean2, 2, sd)    #claculate standard deviation for each pixel points
+#remove 10 most useful pixels for "10".
+useful_rm_train <- train_data
+useful_rm_train[,names(sort(digit_mean2,decreasing = T))[1:10]] <- 0
+useful_rm_mean <- matrix(as.numeric(colMeans(useful_rm_train[which(useful_rm_train$V1 == 0),][, 2:257])), 16, 16)
+useful_rm_mean <- useful_rm_mean[,ncol(useful_rm_mean):1] 
+#remove 10 most useless pixels for "10".
+useless_rm_train <- train_data
+useless_rm_train[,names(sort(digit_mean2,decreasing = F))[1:10]] <- 0
+useless_rm_mean <- matrix(as.numeric(colMeans(useless_rm_train[which(useless_rm_train$V1 == 0),][, 2:257])), 16, 16)
+useless_rm_mean <- useless_rm_mean[,ncol(useless_rm_mean):1] 
+#normal "10".
+digit0_mean <- matrix(as.numeric(colMeans(train_data[which(train_data$V1 == 0),][, 2:257])), 16, 16)
+digit0_mean <- digit0_mean[,ncol(digit0_mean):1] 
+
+par(mfrow = c(1,3))
+image(useful_rm_mean, col = grays, axes = F, main = "Image of digit 0 without \n 10 most useful pixels")
+image(digit0_mean, col = grays, axes = F, main = "Image of digit 0")
+image(useless_rm_mean, col = grays, axes = F, main = "Image of digit 0 without \n 10 most useless pixels")
+
+#4
+predict_knn <- function (test_points = NULL, train_points = NULL, Minkowski_p = 2, k = 3) {
+    train_index <- train_points[,1]    #extract label (col1) in training data.
+    train_matrix <- as.matrix(train_points[,2:257])    #extract pixel points data in training data.
+    real_index <- test_points[,1]    #extract label (col1) in testing data.
+    test_matrix <- as.matrix(test_points[,2:257])    #extract pixel points data in testing data.
+    train_nrow <- nrow(train_matrix)    #obs # in training data.
+    test_nrow <- nrow(test_matrix)    #obs # in testing data.
+    predict_result <- matrix(nrow = test_nrow, ncol = 2)    #build empty matrix to record the k nearest distance for each test obs.
+    predict_result[,1] <- real_index    #fill col1 with testing real label.
+    matrix_one <- matrix(rep(1, times = train_nrow), nrow = train_nrow)    #7291*1 matrix with 1.
+    for (i in 1:test_nrow) {
+        test_distance <- abs((matrix_one %*% t(test_matrix[i,])) - train_matrix)    #absolute difference value between each pixel pairs.
+        test_distance <- rowSums(test_distance^Minkowski_p)^(1/Minkowski_p)    #claculate Minkowski Distance.
+        test_distance <- cbind(train_index, test_distance)    #link distance with label.
+        k_label <- test_distance[order(test_distance[,2])[1:k],1]    #sort and choose the k labels with k nearest distance.
+        top_k_label <- sample(names(which(table(k_label) == max(table(k_label)))), 1)    #choose the one with highest prob and sample from the ties.
+        predict_result[i,2] <- top_k_label    #fill in the labels.
+        colnames(predict_result) <- c("real_digit", "knn")    #change colname: the smallest number after "d" indicate the shortest distance.
+    }
+    predict_result    #output the table.
+}
+#efficiency test.
+system.time(dist(rbind(test_data[1,2:257], train_data[,2:257])))    #user time consuming: 166.116s
+system.time(predict_knn(test_data[1,], train_data, 2, 3))    #user time consuming: 0.136s
+#using loop is more efficient than dist(), since dist() would generate useless distance.
+
+
+#5
+cv_error_knn <- function(train_points = NULL, Minkowski_p = 2, k = 3) {
+    train_nrow <- nrow(train_points)
+    index <- sample(1:train_nrow, size = train_nrow, replace = F)    #randomlize.
+    g_size <- floor(train_nrow/10)    #size for each group.
+    error_rate <- numeric(10)    #empty error rate vector.
+    for(i in 1:9){
+        predict_result <- predict_knn(train_points[index[(g_size*(i-1)+1):(g_size*i)],], train_points[-index[(g_size*(i-1)+1):(g_size*i)],], Minkowski_p, k)
+        error_rate[i] <- sum(predict_result[,1] != predict_result[,2])/g_size
+    }
+    #10th sample may have different size.
+    predict_result <- predict_knn(train_points[index[(g_size*9+1):train_nrow],], train_points[-index[(g_size*9+1):train_nrow],], Minkowski_p, k)
+    error_rate[10] <- sum(predict_result[,1] != predict_result[,2])/(train_nrow-9*g_size)
+    error_rate
+}
+errorrate <- mean(cv_error_knn(train_data, 2, 3))
+errorrate
+#0.0311348
+
+#6
+cv_error1 <- numeric(15)    #empty vector to record cv with k: p: 1, 1-15.
+cv_error2 <- numeric(15)    #empty vector to record cv with k: p: 2, 1-15.
+for(i in 1:15){
+    cv_error1[i] <- cv_error_knn(train_data, 1,i) 
+    cv_error2[i] <- cv_error_knn(train_data, 2,i)
+}
+cv_error1
+cv_error2
+
+par(mfrow = c(1,1))
+
+plot(cv_error1,xlab = "K", ylab = "CV error rate", main = "CV error rates for different K \n and different distance metric",ylim = c(0.01,0.08))
+lines(cv_error1, type = "o", col = "red")
+lines(cv_error2, type = "o", col = "blue", lty = 2, pch = 22)
+legend("bottomright", c("Manhattan","Euclidean"), cex=0.8, pch=c(21,22), col = c("red","blue"), lty = c(1,2), bty = "n")
+
+#7
+#The following code should be repeated for 3 times with the top 3 best combination of p & k.
+Minkowski_p = 2    #define p=2
+train_nrow <- nrow(train_data)
+index <- sample(1:train_nrow, size = train_nrow, replace = F)    #randomlize.
+g_size <- floor(train_nrow/10)    #size for each group.
+k = c(6, 5, 3)    #define k=6, 5, 3
+for (t in 1:3) {
+    for(i in 1:9){    #9 confusion matrix for first 9 group.
+        predict_result <- predict_knn(train_data[index[(g_size*(i-1)+1):(g_size*i)],], train_data[-index[(g_size*(i-1)+1):(g_size*i)],], Minkowski_p, k[t])
+        confusion_m <- matrix(0,10,10)    #empty confusion matrix
+        for(l in 1:g_size) {
+            confusion_m[as.numeric(predict_result[l,1]),as.numeric(predict_result[l,2])] <- confusion_m[as.numeric(predict_result[l,1]),as.numeric(predict_result[l,2])]+1
+        }
+        assign(paste0("cm_p", Minkowski_p, "_k", k[t], "_", i), confusion_m)   
+    }
+    predict_result <- predict_knn(train_data[index[(g_size*9+1):train_nrow],], train_data[-index[(g_size*9+1):train_nrow],], Minkowski_p, k[t])
+    confusion_m <- matrix(0,10,10)    #empty confusion matrix
+    for(l in 1:(train_nrow-9*g_size)) {    #1 confusion matrix for last group.
+        confusion_m[as.numeric(predict_result[l,1]),as.numeric(predict_result[l,2])] <- confusion_m[as.numeric(predict_result[l,1]),as.numeric(predict_result[l,2])]+1
+    }
+    assign(paste0("cm_p", Minkowski_p, "_k", k[t], "_", "10"), confusion_m) 
+}
+#8
+cm_p2_k6_overall <- cm_p2_k6_1 + cm_p2_k6_2 + cm_p2_k6_3 + cm_p2_k6_4 + cm_p2_k6_5 + 
+                    cm_p2_k6_6 + cm_p2_k6_7 + cm_p2_k6_8 + cm_p2_k6_9 + cm_p2_k6_10
+cm_p2_k6_overall
+
+#9
+test_error1 <- numeric(15)
+test_error2 <- numeric(15)
+for(k in 1:15){
+    predict1 <- predict_knn(test_data, train_data, 1, k)
+    test_error1[k] <- sum(predict1[,1]!=predict1[,2])/nrow(test_data)
+    predict2 <- predict_knn(test_data, train_data, 2, k)
+    test_error2[k] <- sum(predict2[,1]!=predict2[,2])/nrow(test_data)
+}
+test_error1
+test_error2
+
+par(mfrow = c(1,1))
+plot(test_error1,xlab = "K", ylab = "Test error rate",main = "Test set error rates for different K \n and different distance metric", ylim = c(0.04,0.09) )
+lines(test_error1,type = "o", col = "red")
+lines(test_error2, type = "o", col = "blue", lty = 2, pch = 22)
+legend("bottomright", c("Manhattan","Euclidean"), cex=0.8, pch=c(21,22), col = c("red","blue"), lty = c(1,2), bty = "n")
